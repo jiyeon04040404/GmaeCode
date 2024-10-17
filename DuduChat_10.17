@@ -1,4 +1,4 @@
-//
+//차정호 교수님 gpt api 연결, 녹음 기능 안됨, 음성 입력&중지 버튼 할당 됨, 음성 인식이 안됨
 
 using OpenAI;
 using System.Collections.Generic;
@@ -18,14 +18,21 @@ public class NewAIChat : MonoBehaviour
 
     private float height;
     private bool isRecording = false;  // 녹음 상태 확인용
-    private OpenAIApi openai = new OpenAIApi();
+
+    // API 키를 여기서 설정
+    private string apiKey = "sk-None-BkiRcnt3hoDFQEFqaeyET3BlbkFJGIlsdlwyDkKZGbxw4pDY";
+    private OpenAIApi openai;
+
     private List<ChatMessage> messages = new List<ChatMessage>();
-    private string prompt = "넌 한국의 초등학교 6학년 과학 선생님이야. 예시는 번호를 매기지 말고 목차도 매기지 마. 조사로 연결해주고 대답은 최대한 쉽고 간결하게 해줘. 존댓말로 답하고 2문장 넘어가지 않게 답해줘.";
+    private string prompt = "넌 한국의 초등학교 6학년 과학 선생님이야. 예시는 번호를 매기지 말고 조사로 연결해주고 대답은 최대한 쉽고 간결하게 해줘. 존댓말로 답하고 2문장 넘어가지 않게 답해줘.";
 
     [SerializeField] private SysCSV sysCsv; // SysCSV 스크립트를 참조
 
     private void Start()
     {
+        // API 키를 사용해 OpenAIApi 객체 초기화
+        openai = new OpenAIApi(apiKey);
+
         button.onClick.AddListener(SendReply);
     }
 
@@ -108,7 +115,7 @@ public class NewAIChat : MonoBehaviour
         // GPT API 호출
         var completionResponse = await openai.CreateChatCompletion(new CreateChatCompletionRequest()
         {
-            Model = "gpt-4o",
+            Model = "gpt-4",  // GPT-4 모델 사용
             Messages = messageToSend // GPT에 보낼 메시지(첫 질문만 prompt 포함)
         });
 
