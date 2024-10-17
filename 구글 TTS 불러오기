@@ -1,0 +1,28 @@
+using System.Collections;
+using UnityEngine;
+using UnityEngine.UI;
+
+public class tts : MonoBehaviour
+{
+    public AudioSource audioSource;
+    public Text text;
+    public float speechSpeed = 1.7f; // 음성 속도를 조절하는 변수, 기본값 1.5로 설정 (1보다 크면 빠름)
+
+    // Start is called before the first frame update
+    void Start()
+    {
+        audioSource = gameObject.GetComponent<AudioSource>();
+        audioSource.pitch = speechSpeed; // 음성 속도 설정
+        StartCoroutine(DownloadTheAudio());
+    }
+
+    IEnumerator DownloadTheAudio()
+    {
+        string url = "https://translate.google.com/translate_tts?ie=UTF-8&total=1&idx=0&textlen=32&client=tw-ob&q=" + text.text + "&tl=Ko-kr";
+        WWW www = new WWW(url);
+        yield return www;
+
+        audioSource.clip = www.GetAudioClip(false, true, AudioType.MPEG);
+        audioSource.Play();
+    }
+}
