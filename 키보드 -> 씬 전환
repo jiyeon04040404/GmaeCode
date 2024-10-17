@@ -1,0 +1,18 @@
+//해당 코드는 enter키로 씬 전환함
+
+using UnityEngine;
+using UnityEngine.SceneManagement; // 씬 관리를 위한 네임스페이스 추가
+
+public class SceneSwitcher : MonoBehaviour
+{
+    void Update()
+    {
+        // 일반 Enter 키 또는 Keypad Enter 키가 눌렸는지 확인
+        if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter))
+        {
+            Debug.Log("Enter or Keypad Enter key detected. Switching scene to 'main'.");
+            // 전환할 씬의 이름을 입력하세요. 예: "main"
+            SceneManager.LoadScene("main");
+        }
+    }
+}
