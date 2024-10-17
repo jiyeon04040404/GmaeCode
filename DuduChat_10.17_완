@@ -1,0 +1,152 @@
+//차정호 교수님 gpt api 연결, 녹음 기능 안됨, 음성 입력&중지 버튼 할당 됨, 음성 인식이 안됨
+
+using OpenAI;
+using System.Collections.Generic;
+using UnityEngine.UI;
+using UnityEngine;
+
+public class NewAIChat : MonoBehaviour
+{
+    [SerializeField] private InputField inputField;
+    [SerializeField] private Button button;
+    [SerializeField] private Button recordButton;  // 녹음 시작 버튼
+    [SerializeField] private Button stopButton;    // 녹음 중지 버튼
+    [SerializeField] private ScrollRect scroll;
+
+    [SerializeField] private RectTransform sent;
+    [SerializeField] private RectTransform received;
+
+    private float height;
+    private bool isRecording = false;  // 녹음 상태 확인용
+
+    // API 키를 여기서 설정
+    private string apiKey = "sk-TmKI5yUc91U_H_1eF9rAZ1BGfD6gGqPzmY2k9n8mZRT3BlbkFJoeFclsdpYzwVaJ9_-A5Zbc4ssoEOqwHlFHs9OnI9IA";
+    private OpenAIApi openai;
+
+    private List<ChatMessage> messages = new List<ChatMessage>();
+    private string prompt = "넌 한국의 초등학교 6학년 과학 선생님이야. 예시는 번호를 매기지 말고, 목차도 매기지 마. 조사로 연결해주고 대답은 최대한 쉽고 간결하게 해줘. 존댓말로 답하고 2문장 넘어가지 않게 답해줘.";
+
+    [SerializeField] private SysCSV sysCsv; // SysCSV 스크립트를 참조
+
+    private void Start()
+    {
+        // API 키를 사용해 OpenAIApi 객체 초기화
+        openai = new OpenAIApi(apiKey);
+
+        button.onClick.AddListener(SendReply);
+    }
+
+    private void Update()
+    {
+        // Enter키 (키보드) 또는 숫자패드의 Enter 키를 눌렀을 때
+        if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter))
+        {
+            if (!isRecording)
+            {
+                // 녹음 시작 버튼 클릭
+                if (recordButton != null)
+                {
+                    Debug.Log("Start recording triggered by Enter key.");
+                    recordButton.onClick.Invoke();
+                    isRecording = true;  // 녹음 시작
+                }
+            }
+            else
+            {
+                // 녹음 중지 버튼 클릭
+                if (stopButton != null)
+                {
+                    Debug.Log("Stop recording triggered by Enter key.");
+                    stopButton.onClick.Invoke();
+                    isRecording = false;  // 녹음 중지
+                }
+            }
+        }
+    }
+
+    //챗 실행
+    private void AppendMessage(ChatMessage message)
+    {
+        scroll.content.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, 0);
+
+        var item = Instantiate(message.Role == "user" ? sent : received, scroll.content);
+        item.GetChild(0).GetChild(0).GetComponent<Text>().text = message.Content;
+        item.anchoredPosition = new Vector2(0, -height);
+        LayoutRebuilder.ForceRebuildLayoutImmediate(item);
+        height += item.sizeDelta.y;
+        scroll.content.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, height);
+        scroll.verticalNormalizedPosition = 0;
+    }
+
+    private async void SendReply()
+    {
+        // 사용자 입력만 저장 (prompt를 제외한 순수한 질문)
+        var userInput = inputField.text;
+
+        // 사용자가 입력한 질문을 ChatMessage로 저장
+        var newMessage = new ChatMessage()
+        {
+            Role = "user",
+            Content = userInput // prompt 제외
+        };
+
+        // 사용자 메시지를 UI에 표시
+        AppendMessage(newMessage);
+
+        // GPT로 보낼 메시지 구성 (첫 메시지일 경우 prompt 추가)
+        var messageToSend = new List<ChatMessage>(messages);
+        if (messages.Count == 0)
+        {
+            messageToSend.Add(new ChatMessage()
+            {
+                Role = "system",
+                Content = prompt // GPT에만 prompt를 포함
+            });
+        }
+
+        // 사용자 메시지를 기록
+        messageToSend.Add(newMessage);
+        messages.Add(newMessage);
+
+        // 버튼과 입력 필드를 비활성화
+        button.enabled = false;
+        inputField.text = "";
+        inputField.enabled = false;
+
+        // GPT API 호출
+        var completionResponse = await openai.CreateChatCompletion(new CreateChatCompletionRequest()
+        {
+            Model = "gpt-4",  // GPT-4 모델 사용
+            Messages = messageToSend // GPT에 보낼 메시지(첫 질문만 prompt 포함)
+        });
+
+        // 응답이 있는 경우
+        if (completionResponse.Choices != null && completionResponse.Choices.Count > 0)
+        {
+            var responseMessage = completionResponse.Choices[0].Message;
+            responseMessage.Content = responseMessage.Content.Trim();
+
+            // GPT 응답 메시지를 추가 및 UI에 표시
+            messages.Add(responseMessage);
+            AppendMessage(responseMessage);
+
+            // CSV에 사용자 질문과 GPT 응답을 기록
+            if (sysCsv != null)
+            {
+                sysCsv.LogToCsv(userInput, responseMessage.Content); // prompt 제외
+            }
+            else
+            {
+                Debug.LogWarning("SysCSV reference is null, skipping CSV logging.");
+            }
+        }
+        else
+        {
+            Debug.LogWarning("No text was generated from this prompt.");
+        }
+
+        // 버튼과 입력 필드를 다시 활성화
+        button.enabled = true;
+        inputField.enabled = true;
+    }
+}
