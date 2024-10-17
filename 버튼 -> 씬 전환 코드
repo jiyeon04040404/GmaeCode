@@ -1,0 +1,11 @@
+using UnityEngine;
+using UnityEngine.SceneManagement;
+
+public class SceneLoader : MonoBehaviour
+{
+    // 버튼 클릭 시 호출될 함수
+    public void LoadScene()
+    {
+        SceneManager.LoadScene("Developer"); // "Developer" 씬으로 전환
+    }
+}
