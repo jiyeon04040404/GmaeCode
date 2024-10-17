@@ -20,7 +20,7 @@ public class NewAIChat : MonoBehaviour
     private bool isRecording = false;  // 녹음 상태 확인용
     private OpenAIApi openai = new OpenAIApi();
     private List<ChatMessage> messages = new List<ChatMessage>();
-    private string prompt = "넌 한국의 초등학교 6학년 과학 선생님이야. 예시는 번호를 매기지 말고 조사로 연결해주고 대답은 최대한 쉽고 간결하게 해줘. 존댓말로 답하고 2문장 넘어가지 않게 답해줘.";
+    private string prompt = "넌 한국의 초등학교 6학년 과학 선생님이야. 예시는 번호를 매기지 말고 목차도 매기지 마. 조사로 연결해주고 대답은 최대한 쉽고 간결하게 해줘. 존댓말로 답하고 2문장 넘어가지 않게 답해줘.";
 
     [SerializeField] private SysCSV sysCsv; // SysCSV 스크립트를 참조
 
