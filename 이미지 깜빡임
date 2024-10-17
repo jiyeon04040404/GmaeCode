@@ -1,0 +1,46 @@
+using System.Collections;
+using UnityEngine;
+
+public class ImageToggle : MonoBehaviour
+{
+    public GameObject imageObject; // 이미지가 포함된 GameObject
+    public float toggleInterval = 0.7f; // 나타나고 사라지는 간격 (초)
+
+    private Coroutine toggleCoroutine;
+
+    private void Start()
+    {
+        if (imageObject == null)
+        {
+            Debug.LogError("ImageObject가 설정되지 않았습니다. Inspector에서 설정해주세요.");
+            return;
+        }
+
+        // 이미지 나타났다 사라지는 무한 반복 시작
+        toggleCoroutine = StartCoroutine(ToggleImageLoop());
+    }
+
+    private IEnumerator ToggleImageLoop()
+    {
+        while (true) // 무한 반복
+        {
+            // 현재 상태 출력
+            Debug.Log("Image is now " + (imageObject.activeSelf ? "Visible" : "Hidden"));
+
+            // 활성화/비활성화 상태를 토글
+            imageObject.SetActive(!imageObject.activeSelf);
+
+            // 지정된 간격만큼 대기
+            yield return new WaitForSeconds(toggleInterval);
+        }
+    }
+
+    private void OnDestroy()
+    {
+        // 씬이 종료되거나 오브젝트가 파괴될 때 코루틴을 중지합니다.
+        if (toggleCoroutine != null)
+        {
+            StopCoroutine(toggleCoroutine);
+        }
+    }
+}
