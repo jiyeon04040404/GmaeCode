@@ -1,0 +1,237 @@
+import javax.swing.*;
+import java.awt.*;
+import java.awt.event.*;
+import java.util.*;
+import java.io.File;
+import javax.imageio.ImageIO;
+
+public class J_Team_Pj extends JPanel implements KeyListener {
+    private int score = 0;
+    private int correctButtons = 0; // 맞춘 버튼 수
+    private int missCount = 0;  // MISS 카운트
+    private javax.swing.Timer gameTimer;
+    private javax.swing.Timer noteGeneratorTimer;  // 노드 생성 타이머
+    private ArrayList<Note> notes;
+    private long gameStartTime;
+    private final int GAME_TIME = 30000; // 게임 진행 시간 (30초)
+    private boolean gameStarted = false;  // 게임 시작 여부
+    private int remainingTime = GAME_TIME / 1000;  // 남은 시간 (초 단위)
+    
+    private final String[] keys = {"Q", "W", "E", "R"};
+    private Image backgroundImage;
+    private Map<String, Image> keyImages = new HashMap<>();
+    private MusicPlayer musicPlayer; // 음악 재생 클래스
+    
+    public J_Team_Pj() {
+        notes = new ArrayList<>();
+        setFocusable(true);
+        addKeyListener(this);
+        
+        // 음악 플레이어 초기화
+        musicPlayer = new MusicPlayer();
+        
+        try {
+            // 배경 이미지 로드
+            backgroundImage = ImageIO.read(new File("D:\\J_Team_Pj\\BackGround.png")); // 배경 이미지 파일 경로 (PNG)
+
+            // 각 키에 맞는 이미지 파일 로드
+            keyImages.put("Q", ImageIO.read(new File("D:\\J_Team_Pj\\Button\\b.png"))); // 파란색 (Q)
+            keyImages.put("W", ImageIO.read(new File("D:\\J_Team_Pj\\Button\\g.png"))); // 초록색 (W)
+            keyImages.put("E", ImageIO.read(new File("D:\\J_Team_Pj\\Button\\r.png"))); // 빨간색 (E)
+            keyImages.put("R", ImageIO.read(new File("D:\\J_Team_Pj\\Button\\y.png"))); // 노란색 (R)
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        // 게임 시작을 위한 타이머 설정
+        gameTimer = new javax.swing.Timer(50, e -> updateGame());  // 타이머 주기를 50ms로 설정하여 속도 조절
+
+        // 노드 생성 타이머 설정 (300ms마다 노드 하나씩 생성)
+        noteGeneratorTimer = new javax.swing.Timer(300, e -> generateNote());  // 300ms마다 하나씩 노드를 생성
+    }
+
+    // 노트 객체 정의
+    private class Note {
+        String key;
+        int xPosition;
+        int yPosition;
+        long spawnTime;
+
+        public Note(String key) {
+            this.key = key;
+
+            // 노드 생성 위치를 화면 내로 제한
+            this.xPosition = new Random().nextInt(getWidth() - 400);  // 화면 크기에 맞는 랜덤 x위치 (이미지 크기에 맞게 400으로 변경)
+            this.yPosition = new Random().nextInt(getHeight() - 400);  // 화면 크기에 맞는 랜덤 y위치 (이미지 크기에 맞게 400으로 변경)
+            
+            this.spawnTime = System.currentTimeMillis();
+        }
+    }
+
+    // 게임 시작 메소드
+    private void startGame() {
+        gameStarted = true;
+        gameStartTime = System.currentTimeMillis();
+        gameTimer.start();  // 게임 업데이트 타이머 시작
+        noteGeneratorTimer.start();  // 노드 생성 타이머 시작
+        
+        // 게임 시작 시 음악 재생
+        musicPlayer.playMusic("D:\\J_Team_Pj\\Sound\\game_music.mp3");  // MP3 음악 파일 경로 지정
+    }
+
+    // 노트 생성 메소드
+    private void generateNote() {
+        String randomKey = keys[new Random().nextInt(keys.length)];
+        notes.add(new Note(randomKey));
+    }
+
+    // 게임 업데이트
+    private void updateGame() {
+        long currentTime = System.currentTimeMillis();
+        if (currentTime - gameStartTime >= GAME_TIME) {
+            gameTimer.stop();  // 게임 종료
+            noteGeneratorTimer.stop();  // 노드 생성 타이머 중지
+            musicPlayer.stopMusic();  // 음악 정지
+            JOptionPane.showMessageDialog(this, "게임 종료! 총 맞춘 버튼 수: " + correctButtons + "\n틀린 버튼 수(MISS): " + missCount, "게임 종료", JOptionPane.INFORMATION_MESSAGE);
+            System.exit(0);  // 게임 종료
+        }
+
+        // 남은 시간 계산
+        remainingTime = (GAME_TIME - (int) (currentTime - gameStartTime)) / 1000;
+
+        // 노트 1초 지나면 삭제
+        Iterator<Note> iterator = notes.iterator();
+        while (iterator.hasNext()) {
+            Note note = iterator.next();
+            if (System.currentTimeMillis() - note.spawnTime >= 1000) {
+                iterator.remove();  // 1초 지나면 노트 삭제
+            }
+        }
+
+        repaint();  // 화면 갱신
+    }
+
+    @Override
+    public void paintComponent(Graphics g) {
+        super.paintComponent(g);
+
+        // 배경 그리기
+        g.drawImage(backgroundImage, 0, 0, getWidth(), getHeight(), this);
+
+        // 노트 그리기
+        for (Note note : notes) {
+            // 해당 키에 맞는 이미지로 노트 그리기
+            Image noteImage = keyImages.get(note.key);
+            if (noteImage != null) {
+                // 이미지 크기를 400x400으로 설정 (크기를 키움)
+                g.drawImage(noteImage, note.xPosition, note.yPosition, 400, 400, this);  // 이미지 크기 400x400
+            }
+        }
+
+        // 점수 출력 (배경 흰 네모 추가)
+        g.setColor(new Color(255, 255, 255, 180));  // 흰색 배경 (투명도 180)
+        g.fillRect(10, 10, 150, 30);  // 흰색 배경 직사각형 크기 줄이기
+        g.setColor(Color.BLACK);  // 글자 색 검은색
+        g.setFont(new Font("맑은 고딕", Font.BOLD, 18));  // 한글 폰트 설정
+        g.drawString("점수: " + score, 20, 30);
+
+        // MISS 카운트 출력 (배경 흰 네모 추가)
+        g.setColor(new Color(255, 255, 255, 180));  // 흰색 배경 (투명도 180)
+        g.fillRect(10, 50, 150, 30);  // 흰색 배경 직사각형 크기 줄이기
+        g.setColor(Color.BLACK);  // 글자 색 검은색
+        g.drawString("MISS: " + missCount, 20, 70);
+
+        // 남은 시간 출력 (배경 흰 네모 추가)
+        g.setColor(new Color(255, 255, 255, 180));  // 흰색 배경 (투명도 180)
+        g.fillRect(10, 90, 150, 30);  // 흰색 배경 직사각형 크기 줄이기
+        g.setColor(Color.BLACK);  // 글자 색 검은색
+        g.drawString("남은 시간: " + remainingTime + "초", 20, 110);  // 남은 시간 표시
+    }
+
+    @Override
+    public void keyTyped(KeyEvent e) {}
+
+    @Override
+    public void keyPressed(KeyEvent e) {
+        String pressedKey = KeyEvent.getKeyText(e.getKeyCode());
+
+        // 키가 일치하는 노트를 찾기
+        Iterator<Note> iterator = notes.iterator();
+        boolean keyMatched = false;
+        while (iterator.hasNext()) {
+            Note note = iterator.next();
+            if (note.key.equals(pressedKey)) {
+                long currentTime = System.currentTimeMillis();
+                if (currentTime - note.spawnTime <= 1000) {  // 1초 이내에 맞춘 경우
+                    score += 1;  // 점수 +1
+                    correctButtons++;  // 맞춘 버튼 수 증가
+                    iterator.remove();  // 맞춘 노트 삭제
+                }
+                keyMatched = true;
+                break;
+            }
+        }
+
+        // 키가 일치하지 않으면 MISS 카운트 증가
+        if (!keyMatched) {
+            missCount++;  // MISS 카운트 증가
+        }
+
+        // Esc 키 누르면 게임 종료
+        if (e.getKeyCode() == KeyEvent.VK_ESCAPE) {
+            gameTimer.stop();  // 게임 종료
+            noteGeneratorTimer.stop();  // 노드 생성 타이머 중지
+            musicPlayer.stopMusic();  // 음악 정지
+            JOptionPane.showMessageDialog(this, "게임 종료! 총 맞춘 버튼 수: " + correctButtons + "\n틀린 버튼 수(MISS): " + missCount, "게임 종료", JOptionPane.INFORMATION_MESSAGE);
+            System.exit(0);  // 게임 종료
+        }
+    }
+
+    @Override
+    public void keyReleased(KeyEvent e) {}
+
+    // 게임 시작 메소드
+    public static void main(String[] args) {
+        JFrame frame = new JFrame("리듬 게임");
+        J_Team_Pj gamePanel = new J_Team_Pj();
+        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        frame.setSize(500, 500);
+        frame.add(gamePanel);
+        frame.setVisible(true);
+
+        // 게임 시작을 위한 대기
+        int option = JOptionPane.showConfirmDialog(frame, "게임을 시작하시겠습니까?", "게임 시작", JOptionPane.YES_NO_OPTION);
+        if (option == JOptionPane.YES_OPTION) {
+            gamePanel.startGame();  // 게임 시작
+        }
+    }
+}
+
+// 음악 재생 클래스
+class MusicPlayer {
+    private Clip clip;
+
+    // 음악 재생 메소드
+    public void playMusic(String musicPath) {
+        try {
+            // 음악 파일 로드
+            File musicFile = new File(musicPath);
+            AudioInputStream audioStream = AudioSystem.getAudioInputStream(musicFile);
+            clip = AudioSystem.getClip();
+            clip.open(audioStream);
+
+            // 음악 시작
+            clip.start();  // 음악 재생 시작
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    // 음악 정지 메소드
+    public void stopMusic() {
+        if (clip != null && clip.isRunning()) {
+            clip.stop();  // 음악 중지
+        }
+    }
+}
