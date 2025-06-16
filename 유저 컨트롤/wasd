@@ -1,0 +1,47 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class PlayerMove : MonoBehaviour
+{
+    public Transform cameraTransform;               // 카메라 Transform
+    public CharacterController characterController; // 캐릭터 컨트롤러
+
+    public float moveSpeed = 10f;   // 이동 속도
+    public float jumpSpeed = 10f;   // 점프 속도
+    public float gravity = -20f;    // 중력 값
+    private float yVelocity = 0f;   // 수직 속도
+
+    void Update()
+    {
+        float h = 0f;
+        float v = 0f;
+
+        // WASD 키 입력 처리
+        if (Input.GetKey(KeyCode.A)) h = -1f;
+        if (Input.GetKey(KeyCode.D)) h = 1f;
+        if (Input.GetKey(KeyCode.W)) v = 1f;
+        if (Input.GetKey(KeyCode.S)) v = -1f;
+
+        // 이동 방향 벡터 계산
+        Vector3 moveDirection = new Vector3(h, 0, v);
+        moveDirection = cameraTransform.TransformDirection(moveDirection);
+        moveDirection *= moveSpeed;
+
+        // 점프 처리
+        if (characterController.isGrounded)
+        {
+            yVelocity = 0f;
+            if (Input.GetKeyDown(KeyCode.Space))
+            {
+                yVelocity = jumpSpeed;
+            }
+        }
+
+        yVelocity += gravity * Time.deltaTime;
+        moveDirection.y = yVelocity;
+
+        // 캐릭터 이동
+        characterController.Move(moveDirection * Time.deltaTime);
+    }
+}
