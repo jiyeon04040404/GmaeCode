@@ -1,3 +1,4 @@
+#y축 고정 x
 using UnityEngine;
 
 public class PlayerMove : MonoBehaviour
