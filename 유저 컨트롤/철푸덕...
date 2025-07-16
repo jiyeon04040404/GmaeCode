@@ -1,0 +1,39 @@
+using UnityEngine;
+
+public class PlayerMove : MonoBehaviour
+{
+    private CharacterController characterController;
+    private Transform cameraTransform;
+
+    public float moveSpeed = 10f;
+    public float gravity = -20f;
+    private float yVelocity = 0f;
+
+    void Start()
+    {
+        characterController = GetComponent<CharacterController>();
+        cameraTransform = GetComponentInChildren<Camera>().transform; // 자식 카메라 자동 할당
+    }
+
+    void Update()
+    {
+        if (characterController == null || cameraTransform == null) return;
+
+        float h = Input.GetAxisRaw("Horizontal"); // A/D
+        float v = Input.GetAxisRaw("Vertical");   // W/S
+
+        Vector3 move = new Vector3(h, 0, v);
+        move = cameraTransform.TransformDirection(move);
+        move *= moveSpeed;
+
+        if (characterController.isGrounded)
+        {
+            yVelocity = 0f;
+        }
+
+        yVelocity += gravity * Time.deltaTime;
+        move.y = yVelocity;
+
+        characterController.Move(move * Time.deltaTime);
+    }
+}
