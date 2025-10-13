@@ -1,0 +1,218 @@
+//이미지 -> 클릭 -> 영상 -> 클릭 -> 영상(계속 반복)
+
+using UnityEngine;
+using UnityEngine.UI;
+using UnityEngine.Video;
+using System.Collections;
+
+public class Image1 : MonoBehaviour
+{
+    public GameObject splashImageObj;
+
+    [System.Serializable]
+    public class VideoSetup
+    {
+        public VideoPlayer videoPlayer;
+        public RawImage videoOutputImage;
+    }
+
+    public VideoSetup[] videos;
+
+    public bool fadeOutSplash = true;
+    public float fadeDuration = 0.5f;
+
+    private CanvasGroup splashCg;
+    private bool waitingForClick = false;  // 클릭 대기 상태
+    private int currentVideoIndex = -1;    // 현재 재생 중인 비디오 (-1은 시작 전)
+
+    void Awake()
+    {
+        // 스플래시 이미지 준비
+        if (splashImageObj != null)
+        {
+            splashCg = splashImageObj.GetComponent<CanvasGroup>();
+            if (splashCg == null) splashCg = splashImageObj.AddComponent<CanvasGroup>();
+            splashCg.alpha = 1f;
+            splashImageObj.SetActive(true);
+        }
+
+        // 모든 비디오 설정
+        foreach (var video in videos)
+        {
+            if (video.videoPlayer != null)
+            {
+                video.videoPlayer.playOnAwake = false;
+                video.videoPlayer.waitForFirstFrame = true;
+                video.videoPlayer.skipOnDrop = true;
+                video.videoPlayer.renderMode = VideoRenderMode.RenderTexture;
+                video.videoPlayer.isLooping = false;  // 루프 비활성화
+
+                // RenderTexture 생성 및 연결
+                if (video.videoPlayer.targetTexture == null)
+                {
+                    RenderTexture rt = new RenderTexture(1920, 1080, 0);
+                    video.videoPlayer.targetTexture = rt;
+                }
+
+                // RawImage에 연결
+                if (video.videoOutputImage != null)
+                {
+                    video.videoOutputImage.texture = video.videoPlayer.targetTexture;
+                    video.videoOutputImage.enabled = false;
+                }
+            }
+        }
+    }
+
+    void Update()
+    {
+        // 클릭 감지
+        if ((Input.GetMouseButtonDown(0) ||
+            (Input.touchCount > 0 && Input.GetTouch(0).phase == TouchPhase.Began)))
+        {
+            if (waitingForClick)
+            {
+                // 이미 클릭 대기 중이면 중복 클릭 방지
+                return;
+            }
+
+            waitingForClick = true;
+
+            if (currentVideoIndex == -1)
+            {
+                // 첫 시작: 스플래시 이미지에서 첫 번째 비디오로
+                StartCoroutine(StartFirstVideo());
+            }
+            else
+            {
+                // 다음 비디오로 넘어가기
+                StartCoroutine(PlayNextVideo());
+            }
+        }
+    }
+
+    IEnumerator StartFirstVideo()
+    {
+        if (videos.Length == 0 || videos[0].videoPlayer == null)
+        {
+            Debug.LogError("비디오가 설정되지 않았습니다!");
+            waitingForClick = false;
+            yield break;
+        }
+
+        Debug.Log("첫 번째 비디오 시작");
+
+        // 스플래시 이미지 페이드아웃
+        if (splashImageObj != null)
+        {
+            if (fadeOutSplash && splashCg != null)
+            {
+                float timer = 0f;
+                while (timer < fadeDuration)
+                {
+                    timer += Time.deltaTime;
+                    splashCg.alpha = 1f - Mathf.Clamp01(timer / fadeDuration);
+                    yield return null;
+                }
+            }
+            splashImageObj.SetActive(false);
+        }
+
+        // 첫 번째 비디오 재생
+        yield return StartCoroutine(PlayVideo(0));
+
+        waitingForClick = false;
+    }
+
+    IEnumerator PlayNextVideo()
+    {
+        int nextIndex = currentVideoIndex + 1;
+
+        if (nextIndex >= videos.Length)
+        {
+            Debug.Log("모든 비디오 재생 완료!");
+            waitingForClick = false;
+            yield break;
+        }
+
+        Debug.Log($"다음 비디오로 이동: {nextIndex}");
+
+        // 이전 비디오 정지 및 숨기기
+        if (currentVideoIndex >= 0 && currentVideoIndex < videos.Length)
+        {
+            var prevVideo = videos[currentVideoIndex];
+            if (prevVideo.videoPlayer != null)
+            {
+                prevVideo.videoPlayer.Stop();
+            }
+            if (prevVideo.videoOutputImage != null)
+            {
+                prevVideo.videoOutputImage.enabled = false;
+            }
+        }
+
+        // 다음 비디오 재생
+        yield return StartCoroutine(PlayVideo(nextIndex));
+
+        waitingForClick = false;
+    }
+
+    IEnumerator PlayVideo(int index)
+    {
+        if (index >= videos.Length)
+        {
+            yield break;
+        }
+
+        currentVideoIndex = index;
+        var video = videos[index];
+
+        if (video.videoPlayer == null || video.videoOutputImage == null)
+        {
+            Debug.LogError($"비디오 {index}의 설정이 올바르지 않습니다!");
+            yield break;
+        }
+
+        Debug.Log($"비디오 {index} 준비 중...");
+
+        // 현재 비디오 RawImage 활성화
+        video.videoOutputImage.enabled = true;
+
+        // 비디오 준비
+        video.videoPlayer.Prepare();
+
+        float timeout = 5f;
+        float elapsed = 0f;
+        while (!video.videoPlayer.isPrepared && elapsed < timeout)
+        {
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+
+        if (!video.videoPlayer.isPrepared)
+        {
+            Debug.LogError($"비디오 {index} 준비 실패!");
+            yield break;
+        }
+
+        Debug.Log($"비디오 {index} 재생 시작!");
+
+        // 재생
+        video.videoPlayer.Play();
+
+        yield return new WaitForSeconds(0.2f);
+        Debug.Log($"비디오 {index} 재생 중: {video.videoPlayer.isPlaying}");
+    }
+
+    void OnDestroy()
+    {
+        // RenderTexture 메모리 정리
+        foreach (var video in videos)
+        {
+            if (video.videoPlayer != null && video.videoPlayer.targetTexture != null)
+            {
+                video.videoPlayer.targetTexture.Release();
+            }
+        }
+    }
+}
