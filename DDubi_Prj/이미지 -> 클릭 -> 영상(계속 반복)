@@ -1,4 +1,5 @@
 //이미지 -> 클릭 -> 영상 -> 클릭 -> 영상(계속 반복)
+//영상 루프 안됨
 
 using UnityEngine;
 using UnityEngine.UI;
