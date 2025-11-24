@@ -1,0 +1,726 @@
+using UnityEngine;
+using UnityEngine.UI;
+using UnityEngine.Video;
+using System.Collections;
+using System.Collections.Generic;
+
+public class Image1 : MonoBehaviour
+{
+    public GameObject splashImageObj;
+
+    [Header("오디오 볼륨 설정")]
+    [Range(0f, 1f)]
+    public float ttsVolume = 1f;
+
+    [System.Serializable]
+    public class SubtitleImage
+    {
+        public string subtitleName;
+        public GameObject imageObject;
+        [Tooltip("자막이 나타날 시간 (초, 0이면 바로 시작)")]
+        public float showTime = 0f;
+        [Tooltip("자막이 유지되는 시간 (초, 0이면 비디오 끝까지)")]
+        public float duration = 3f;
+        [HideInInspector] public bool isShowing = false;
+    }
+
+    [System.Serializable]
+    public class InteractionArea
+    {
+        public string areaName;
+        public GameObject buttonObject;
+        public GameObject triggerImage;
+        public GameObject subtitleImage;
+        public AudioClip clickSound;
+        public AudioClip[] ttsClips;
+        [HideInInspector] public bool isActive = false;
+        [HideInInspector] public bool ttsCompleted = false;
+        [HideInInspector] public AudioSource ttsAudioSource;
+    }
+
+    [System.Serializable]
+    public class VideoSetup
+    {
+        public VideoPlayer videoPlayer;
+        public RawImage videoOutputImage;
+        public AudioClip[] audioTracks;
+        public bool autoPlayNext = false;
+        public bool pauseVideoForTTS = false;
+        public List<InteractionArea> interactionAreas;
+        public List<SubtitleImage> subtitleImages;
+        private CanvasGroup canvasGroup;
+
+        public void Initialize()
+        {
+            if (videoOutputImage != null)
+            {
+                canvasGroup = videoOutputImage.GetComponent<CanvasGroup>();
+                if (canvasGroup == null)
+                {
+                    canvasGroup = videoOutputImage.gameObject.AddComponent<CanvasGroup>();
+                }
+            }
+
+            if (subtitleImages != null)
+            {
+                foreach (var subtitle in subtitleImages)
+                {
+                    if (subtitle.imageObject != null)
+                    {
+                        subtitle.imageObject.SetActive(false);
+                        subtitle.isShowing = false;
+                    }
+                }
+            }
+        }
+
+        public void SetAlpha(float alpha)
+        {
+            if (canvasGroup != null)
+            {
+                canvasGroup.alpha = alpha;
+            }
+        }
+    }
+
+    public VideoSetup[] videos;
+    public bool fadeOutSplash = true;
+    public float fadeDuration = 0.5f;
+    public float videoTransitionDuration = 0.5f;
+
+    private CanvasGroup splashCg;
+    private AudioSource globalAudioSource;
+    private bool canClickToNext = false;
+    private bool isTransitioning = false;
+    private int currentVideoIndex = -1;
+    private SplashTTSController splashController;
+    private Coroutine subtitleCoroutine;
+
+    void Awake()
+    {
+        splashController = FindObjectOfType<SplashTTSController>();
+
+        GameObject audioObj = new GameObject("GlobalAudioSource");
+        audioObj.transform.SetParent(transform);
+        globalAudioSource = audioObj.AddComponent<AudioSource>();
+        globalAudioSource.playOnAwake = false;
+        globalAudioSource.volume = ttsVolume;
+
+        if (splashImageObj != null)
+        {
+            splashCg = splashImageObj.GetComponent<CanvasGroup>();
+            if (splashCg == null)
+            {
+                splashCg = splashImageObj.AddComponent<CanvasGroup>();
+            }
+            splashCg.alpha = 1f;
+            splashImageObj.SetActive(true);
+        }
+
+        if (videos == null || videos.Length == 0) return;
+
+        for (int i = 0; i < videos.Length; i++)
+        {
+            var video = videos[i];
+            if (video == null || video.videoPlayer == null) continue;
+
+            video.videoPlayer.playOnAwake = false;
+            video.videoPlayer.waitForFirstFrame = true;
+            video.videoPlayer.skipOnDrop = true;
+            video.videoPlayer.renderMode = VideoRenderMode.RenderTexture;
+
+            if (video.videoPlayer.targetTexture == null)
+            {
+                video.videoPlayer.targetTexture = new RenderTexture(1920, 1080, 0);
+            }
+
+            if (video.videoOutputImage != null)
+            {
+                video.videoOutputImage.texture = video.videoPlayer.targetTexture;
+                video.videoOutputImage.enabled = false;
+            }
+
+            video.Initialize();
+
+            if (video.autoPlayNext)
+            {
+                int index = i;
+                video.videoPlayer.loopPointReached += (vp) => OnAutoVideoEnded(index);
+            }
+
+            if (video.interactionAreas != null)
+            {
+                foreach (var area in video.interactionAreas)
+                {
+                    SetupInteractionArea(area);
+                }
+            }
+        }
+    }
+
+    void Update()
+    {
+        if (globalAudioSource != null)
+        {
+            globalAudioSource.volume = ttsVolume;
+        }
+    }
+
+    void SetupInteractionArea(InteractionArea area)
+    {
+        // 투명 버튼 설정
+        if (area.buttonObject != null)
+        {
+            Button btn = area.buttonObject.GetComponent<Button>();
+            if (btn == null) btn = area.buttonObject.AddComponent<Button>();
+
+            Image img = area.buttonObject.GetComponent<Image>();
+            if (img == null) img = area.buttonObject.AddComponent<Image>();
+            img.color = new Color(1, 1, 1, 0);
+
+            btn.onClick.AddListener(() => OnInteractionAreaClicked(area));
+            area.buttonObject.SetActive(false);
+        }
+
+        // triggerImage 초기화
+        if (area.triggerImage != null)
+        {
+            area.triggerImage.SetActive(false);
+        }
+
+        // subtitleImage 초기화
+        if (area.subtitleImage != null)
+        {
+            area.subtitleImage.SetActive(false);
+        }
+
+        // TTS AudioSource 생성
+        if (area.ttsClips != null && area.ttsClips.Length > 0)
+        {
+            GameObject ttsObj = new GameObject("InteractionTTS_" + area.areaName);
+            ttsObj.transform.SetParent(transform);
+            area.ttsAudioSource = ttsObj.AddComponent<AudioSource>();
+            area.ttsAudioSource.playOnAwake = false;
+            area.ttsAudioSource.volume = ttsVolume;
+        }
+    }
+
+    void OnClick()
+    {
+        if (isTransitioning) return;
+
+        if (currentVideoIndex == 4)
+        {
+            return;
+        }
+
+        if (currentVideoIndex >= 0 && currentVideoIndex < videos.Length)
+        {
+            if (videos[currentVideoIndex].autoPlayNext) return;
+        }
+
+        if (currentVideoIndex == -1)
+        {
+            if (splashController != null && !splashController.IsTTSFinished())
+            {
+                return;
+            }
+            StartCoroutine(StartFirstVideo());
+        }
+        else if (canClickToNext)
+        {
+            StartCoroutine(TransitionToNextVideo());
+        }
+    }
+
+    void LateUpdate()
+    {
+        if (Input.GetMouseButtonDown(0) ||
+            (Input.touchCount > 0 && Input.GetTouch(0).phase == TouchPhase.Began))
+        {
+            OnClick();
+        }
+    }
+
+    void OnAutoVideoEnded(int videoIndex)
+    {
+        if (videoIndex != currentVideoIndex) return;
+
+        if (globalAudioSource != null && globalAudioSource.isPlaying)
+        {
+            StartCoroutine(WaitForTTSAndTransition());
+        }
+        else
+        {
+            int nextIndex = currentVideoIndex + 1;
+            if (nextIndex < videos.Length)
+            {
+                StartCoroutine(TransitionToNextVideo());
+            }
+        }
+    }
+
+    IEnumerator WaitForTTSAndTransition()
+    {
+        var currentVideo = videos[currentVideoIndex];
+
+        if (currentVideo.videoPlayer != null)
+        {
+            currentVideo.videoPlayer.Pause();
+        }
+
+        while (globalAudioSource != null && globalAudioSource.isPlaying)
+        {
+            yield return null;
+        }
+
+        int nextIndex = currentVideoIndex + 1;
+        if (nextIndex < videos.Length)
+        {
+            StartCoroutine(TransitionToNextVideo());
+        }
+    }
+
+    void OnInteractionAreaClicked(InteractionArea area)
+    {
+        if (area.clickSound != null)
+        {
+            AudioSource.PlayClipAtPoint(area.clickSound, Camera.main.transform.position);
+        }
+
+        // 이미 활성화되어 있고 TTS가 완료되었으면 닫기
+        if (area.isActive && area.ttsCompleted)
+        {
+            CloseInteraction(area);
+        }
+        // 비활성화 상태면 열기
+        else if (!area.isActive)
+        {
+            OpenInteraction(area);
+        }
+    }
+
+    void OpenInteraction(InteractionArea area)
+    {
+        area.isActive = true;
+        area.ttsCompleted = false;
+
+        // triggerImage 활성화
+        if (area.triggerImage != null)
+        {
+            area.triggerImage.SetActive(true);
+        }
+
+        // subtitleImage 활성화
+        if (area.subtitleImage != null)
+        {
+            area.subtitleImage.SetActive(true);
+        }
+
+        // TTS 재생
+        if (area.ttsAudioSource != null && area.ttsClips != null && area.ttsClips.Length > 0)
+        {
+            StartCoroutine(PlayInteractionTTS(area));
+        }
+        else
+        {
+            // TTS가 없으면 바로 완료 처리
+            area.ttsCompleted = true;
+        }
+    }
+
+    void CloseInteraction(InteractionArea area)
+    {
+        area.isActive = false;
+        area.ttsCompleted = false;
+
+        // triggerImage 비활성화
+        if (area.triggerImage != null)
+        {
+            area.triggerImage.SetActive(false);
+        }
+
+        // subtitleImage 비활성화
+        if (area.subtitleImage != null)
+        {
+            area.subtitleImage.SetActive(false);
+        }
+
+        // TTS 중단
+        if (area.ttsAudioSource != null && area.ttsAudioSource.isPlaying)
+        {
+            area.ttsAudioSource.Stop();
+        }
+    }
+
+    IEnumerator PlayInteractionTTS(InteractionArea area)
+    {
+        if (area.ttsAudioSource == null || area.ttsClips == null) yield break;
+
+        foreach (var clip in area.ttsClips)
+        {
+            if (clip != null && area.isActive)
+            {
+                area.ttsAudioSource.clip = clip;
+                area.ttsAudioSource.Play();
+
+                while (area.ttsAudioSource.isPlaying && area.isActive)
+                {
+                    yield return null;
+                }
+
+                if (!area.isActive) break;
+
+                yield return new WaitForSeconds(0.1f);
+            }
+            else
+            {
+                break;
+            }
+        }
+
+        // TTS 완료
+        if (area.isActive)
+        {
+            area.ttsCompleted = true;
+        }
+    }
+
+    public void OnSplashTTSFinished()
+    {
+        StartCoroutine(StartFirstVideo());
+    }
+
+    IEnumerator StartFirstVideo()
+    {
+        if (videos == null || videos.Length == 0) yield break;
+
+        isTransitioning = true;
+
+        if (splashImageObj != null)
+        {
+            if (fadeOutSplash && splashCg != null)
+            {
+                float timer = 0f;
+                while (timer < fadeDuration)
+                {
+                    timer += Time.deltaTime;
+                    splashCg.alpha = 1f - Mathf.Clamp01(timer / fadeDuration);
+                    yield return null;
+                }
+            }
+            splashImageObj.SetActive(false);
+        }
+
+        yield return StartCoroutine(PlayVideo(0));
+
+        isTransitioning = false;
+    }
+
+    IEnumerator TransitionToNextVideo()
+    {
+        if (isTransitioning) yield break;
+
+        int nextIndex = currentVideoIndex + 1;
+        if (nextIndex >= videos.Length) yield break;
+
+        var nextVideo = videos[nextIndex];
+        if (nextVideo == null || nextVideo.videoPlayer == null) yield break;
+
+        isTransitioning = true;
+        canClickToNext = false;
+        HideAllInteractionAreas();
+
+        HideAllSubtitles(currentVideoIndex);
+        if (subtitleCoroutine != null)
+        {
+            StopCoroutine(subtitleCoroutine);
+        }
+
+        var currentVideo = videos[currentVideoIndex];
+
+        if (globalAudioSource != null)
+        {
+            globalAudioSource.Stop();
+        }
+
+        nextVideo.videoOutputImage.enabled = true;
+        nextVideo.SetAlpha(0f);
+
+        nextVideo.videoPlayer.time = 0;
+        nextVideo.videoPlayer.Prepare();
+
+        float timeout = 5f, elapsed = 0f;
+        while (!nextVideo.videoPlayer.isPrepared && elapsed < timeout)
+        {
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+
+        if (!nextVideo.videoPlayer.isPrepared)
+        {
+            isTransitioning = false;
+            yield break;
+        }
+
+        nextVideo.videoPlayer.Play();
+
+        while (!nextVideo.videoPlayer.isPlaying)
+        {
+            yield return null;
+        }
+
+        long startFrame = nextVideo.videoPlayer.frame;
+        timeout = 2f;
+        elapsed = 0f;
+        while (nextVideo.videoPlayer.frame <= startFrame && elapsed < timeout)
+        {
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+
+        yield return new WaitForSeconds(0.3f);
+
+        subtitleCoroutine = StartCoroutine(ManageSubtitles(nextVideo));
+
+        float timer = 0f;
+        while (timer < videoTransitionDuration)
+        {
+            timer += Time.deltaTime;
+            float progress = timer / videoTransitionDuration;
+
+            if (currentVideo != null)
+            {
+                currentVideo.SetAlpha(1f - progress);
+            }
+
+            nextVideo.SetAlpha(progress);
+
+            yield return null;
+        }
+
+        if (currentVideo != null)
+        {
+            currentVideo.SetAlpha(0f);
+            if (currentVideo.videoPlayer != null) currentVideo.videoPlayer.Stop();
+            if (currentVideo.videoOutputImage != null) currentVideo.videoOutputImage.enabled = false;
+        }
+
+        nextVideo.SetAlpha(1f);
+        currentVideoIndex = nextIndex;
+
+        ShowInteractionAreas(nextVideo);
+        isTransitioning = false;
+
+        StartCoroutine(PlayAudioTracksSequentially(nextVideo));
+    }
+
+    IEnumerator PlayVideo(int index)
+    {
+        if (videos == null || index >= videos.Length) yield break;
+
+        currentVideoIndex = index;
+        var video = videos[index];
+
+        if (video == null || video.videoPlayer == null || video.videoOutputImage == null) yield break;
+
+        video.videoPlayer.time = 0;
+        video.videoPlayer.Prepare();
+
+        float timeout = 5f, elapsed = 0f;
+        while (!video.videoPlayer.isPrepared && elapsed < timeout)
+        {
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+
+        if (!video.videoPlayer.isPrepared) yield break;
+
+        video.videoPlayer.Play();
+
+        while (!video.videoPlayer.isPlaying)
+        {
+            yield return null;
+        }
+
+        long startFrame = video.videoPlayer.frame;
+        timeout = 2f;
+        elapsed = 0f;
+        while (video.videoPlayer.frame <= startFrame && elapsed < timeout)
+        {
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+
+        yield return new WaitForSeconds(0.3f);
+
+        subtitleCoroutine = StartCoroutine(ManageSubtitles(video));
+
+        video.videoOutputImage.enabled = true;
+        video.SetAlpha(0f);
+
+        float timer = 0f;
+        while (timer < videoTransitionDuration)
+        {
+            timer += Time.deltaTime;
+            video.SetAlpha(Mathf.Clamp01(timer / videoTransitionDuration));
+            yield return null;
+        }
+
+        video.SetAlpha(1f);
+        ShowInteractionAreas(video);
+
+        StartCoroutine(PlayAudioTracksSequentially(video));
+    }
+
+    IEnumerator ManageSubtitles(VideoSetup video)
+    {
+        if (video.subtitleImages == null || video.subtitleImages.Count == 0) yield break;
+
+        while (video.videoPlayer != null && (video.videoPlayer.isPlaying || video.videoPlayer.isPaused))
+        {
+            float currentTime = (float)video.videoPlayer.time;
+
+            foreach (var subtitle in video.subtitleImages)
+            {
+                if (subtitle.imageObject == null) continue;
+
+                if (!subtitle.isShowing && currentTime >= subtitle.showTime)
+                {
+                    subtitle.imageObject.SetActive(true);
+                    subtitle.isShowing = true;
+                }
+
+                if (subtitle.isShowing && subtitle.duration > 0f)
+                {
+                    if (currentTime >= subtitle.showTime + subtitle.duration)
+                    {
+                        subtitle.imageObject.SetActive(false);
+                        subtitle.isShowing = false;
+                    }
+                }
+            }
+
+            yield return null;
+        }
+
+        HideAllSubtitles(currentVideoIndex);
+    }
+
+    void HideAllSubtitles(int videoIndex)
+    {
+        if (videoIndex < 0 || videoIndex >= videos.Length) return;
+
+        var video = videos[videoIndex];
+        if (video.subtitleImages == null) return;
+
+        foreach (var subtitle in video.subtitleImages)
+        {
+            if (subtitle.imageObject != null)
+            {
+                subtitle.imageObject.SetActive(false);
+                subtitle.isShowing = false;
+            }
+        }
+    }
+
+    IEnumerator PlayAudioTracksSequentially(VideoSetup video)
+    {
+        canClickToNext = false;
+
+        if (video.pauseVideoForTTS && video.videoPlayer != null)
+        {
+            video.videoPlayer.Pause();
+        }
+
+        if (video.audioTracks != null && video.audioTracks.Length > 0)
+        {
+            foreach (var audioClip in video.audioTracks)
+            {
+                if (audioClip != null)
+                {
+                    globalAudioSource.clip = audioClip;
+                    globalAudioSource.Play();
+
+                    yield return new WaitForSeconds(audioClip.length);
+
+                    yield return new WaitForSeconds(0.1f);
+                }
+            }
+        }
+
+        if (video.pauseVideoForTTS && video.videoPlayer != null)
+        {
+            video.videoPlayer.Play();
+        }
+
+        if (!video.autoPlayNext)
+        {
+            canClickToNext = true;
+        }
+    }
+
+    void ShowInteractionAreas(VideoSetup video)
+    {
+        if (currentVideoIndex != 4)
+        {
+            return;
+        }
+
+        if (video.interactionAreas == null) return;
+
+        foreach (var area in video.interactionAreas)
+        {
+            if (area.buttonObject != null)
+            {
+                area.buttonObject.SetActive(true);
+            }
+        }
+    }
+
+    void HideAllInteractionAreas()
+    {
+        foreach (var video in videos)
+        {
+            if (video.interactionAreas == null) continue;
+
+            foreach (var area in video.interactionAreas)
+            {
+                // 열려있으면 닫기
+                if (area.isActive)
+                {
+                    CloseInteraction(area);
+                }
+
+                // 버튼 숨기기
+                if (area.buttonObject != null)
+                {
+                    area.buttonObject.SetActive(false);
+                }
+            }
+        }
+    }
+
+    void OnDestroy()
+    {
+        if (subtitleCoroutine != null)
+        {
+            StopCoroutine(subtitleCoroutine);
+        }
+
+        if (videos == null) return;
+
+        foreach (var video in videos)
+        {
+            if (video != null && video.videoPlayer != null)
+            {
+                video.videoPlayer.loopPointReached -= (vp) => OnAutoVideoEnded(currentVideoIndex);
+
+                if (video.videoPlayer.targetTexture != null)
+                {
+                    video.videoPlayer.targetTexture.Release();
+                }
+            }
+        }
+    }
+}
